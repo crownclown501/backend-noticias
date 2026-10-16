@@ -1,22 +1,39 @@
 const express = require('express');
 const cors = require('cors');
-const rateLimit = require('express-rate-limit');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-// CORS abierto: Permite que el frontend se mude a cualquier host/dominio sin romper la API
 app.use(cors());
 
-const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, 
-  max: 50, 
-  handler: (req, res) => {
-    res.status(429).json([]); 
-  }
-});
-app.use('/api/', limiter);
+// --- LIMITADOR DE PETICIONES NATIVO (Sin instalar librerías) ---
+const rateLimitMap = new Map();
+app.use('/api/', (req, res, next) => {
+  const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
+  const ahora = Date.now();
+  const limite = 50; 
+  const ventana = 15 * 60 * 1000; 
 
+  if (!rateLimitMap.has(ip)) {
+    rateLimitMap.set(ip, { count: 1, start: ahora });
+    return next();
+  }
+
+  const data = rateLimitMap.get(ip);
+  if (ahora - data.start > ventana) {
+    rateLimitMap.set(ip, { count: 1, start: ahora });
+    return next();
+  }
+
+  data.count++;
+  if (data.count > limite) {
+    return res.status(429).json([]); 
+  }
+
+  next();
+});
+
+// --- CACHÉ Y CANDADO (Protección de créditos y memoria) ---
 let noticiasCache = null;
 let ultimaActualizacion = 0;
 let promesaActualizacion = null;
