@@ -31,7 +31,8 @@ app.get('/api/noticias-sat', async (req, res) => {
   }
 
   // 3. Preparar la consulta a la API de NewsData
-  const query = 'SAT OR "reforma fiscal" OR "contabilidad financiera"';
+  //const query = 'SAT OR "reforma fiscal" OR "contabilidad financiera"';
+  const query = '"Servicio de Administración Tributaria" OR "reforma fiscal" OR "contabilidad financiera"';
   const url = `https://newsdata.io/api/1/latest?apikey=${API_KEY}&q=${encodeURIComponent(query)}&country=mx`;
 
   try {
