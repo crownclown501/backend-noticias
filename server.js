@@ -5,16 +5,15 @@ const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-const corsOptions = {
-  origin: 'https://huertdiaz.netlify.app',
-  optionsSuccessStatus: 200
-};
-app.use(cors(corsOptions));
+// CORS abierto: Permite que el frontend se mude a cualquier host/dominio sin romper la API
+app.use(cors());
 
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, 
   max: 50, 
-  message: { error: 'Demasiadas peticiones. Por favor, intenta más tarde.' }
+  handler: (req, res) => {
+    res.status(429).json([]); 
+  }
 });
 app.use('/api/', limiter);
 
@@ -26,7 +25,7 @@ const TIEMPO_EXPIRACION = 12 * 60 * 60 * 1000;
 
 async function obtenerNoticiasDeAPI() {
   const API_KEY = process.env.NEWSDATA_API_KEY;
-  if (!API_KEY) throw new Error('No se encontró la variable NEWSDATA_API_KEY');
+  if (!API_KEY) throw new Error('');
 
   const query = '"Servicio de Administración Tributaria" OR "reforma fiscal" OR "contabilidad financiera"';
   const url = `https://newsdata.io/api/1/latest?apikey=${API_KEY}&q=${encodeURIComponent(query)}&country=mx`;
@@ -35,7 +34,7 @@ async function obtenerNoticiasDeAPI() {
   const data = await response.json();
 
   if (data.status === 'error') {
-    throw new Error(data.results?.message || data.message || 'Error en NewsData');
+    throw new Error('Error en NewsData');
   }
 
   return (data.results || []).map(item => ({
@@ -61,7 +60,7 @@ app.get('/api/noticias-sat', async (req, res) => {
         return res.json(articles);
     } catch (error) {
         if (noticiasCache) return res.json(noticiasCache);
-        return res.status(500).json({ error: 'Error interno del servidor' });
+        return res.json([]); 
     }
   }
   
@@ -84,12 +83,12 @@ app.get('/api/noticias-sat', async (req, res) => {
       return res.json(noticiasCache);
     }
 
-    return res.status(500).json({ error: 'Error interno del servidor' });
+    return res.json([]); 
   }
 });
 
 app.get('/', (req, res) => {
-  res.send('API de Noticias funcionando correctamente');
+  res.send(''); 
 });
 
 app.listen(PORT, () => {
