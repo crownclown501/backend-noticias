@@ -1,93 +1,93 @@
 const express = require('express');
 const cors = require('cors');
+const rateLimit = require('express-rate-limit');
 const app = express();
 
 const PORT = process.env.PORT || 3000;
 
-app.use(cors());
+const corsOptions = {
+  origin: 'https://huertdiaz.netlify.app',
+  optionsSuccessStatus: 200
+};
+app.use(cors(corsOptions));
 
-// --- VARIABLES GLOBALES PARA EL CACHÉ ---
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, 
+  max: 50, 
+  message: { error: 'Demasiadas peticiones. Por favor, intenta más tarde.' }
+});
+app.use('/api/', limiter);
+
 let noticiasCache = null;
 let ultimaActualizacion = 0;
+let promesaActualizacion = null;
 
-// Configuración de expiración: 12 horas en milisegundos
 const TIEMPO_EXPIRACION = 12 * 60 * 60 * 1000; 
+
+async function obtenerNoticiasDeAPI() {
+  const API_KEY = process.env.NEWSDATA_API_KEY;
+  if (!API_KEY) throw new Error('No se encontró la variable NEWSDATA_API_KEY');
+
+  const query = '"Servicio de Administración Tributaria" OR "reforma fiscal" OR "contabilidad financiera"';
+  const url = `https://newsdata.io/api/1/latest?apikey=${API_KEY}&q=${encodeURIComponent(query)}&country=mx`;
+
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (data.status === 'error') {
+    throw new Error(data.results?.message || data.message || 'Error en NewsData');
+  }
+
+  return (data.results || []).map(item => ({
+    title: item.title,
+    description: item.description || '',
+    url: item.link, 
+    publishedAt: item.pubDate,
+    source: { name: item.source_id || 'NewsData' },
+    image: item.image_url || null
+  }));
+}
 
 app.get('/api/noticias-sat', async (req, res) => {
   const ahora = Date.now();
 
-  // 1. Verificar si tenemos caché válido
   if (noticiasCache && (ahora - ultimaActualizacion < TIEMPO_EXPIRACION)) {
-    console.log('Enviando noticias desde el caché local (0 tokens gastados)');
     return res.json(noticiasCache);
   }
 
-  // 2. Extraer la llave de las variables de entorno
-  const API_KEY = process.env.NEWSDATA_API_KEY;
-  
-  if (!API_KEY) {
-    console.error('ERROR: No se encontró la variable NEWSDATA_API_KEY');
-    return res.status(500).json({ error: 'Error de configuración del servidor' });
-  }
-
-  // 3. Preparar la consulta a la API de NewsData
-  //const query = 'SAT OR "reforma fiscal" OR "contabilidad financiera"';
-  const query = '"Servicio de Administración Tributaria" OR "reforma fiscal" OR "contabilidad financiera"';
-  const url = `https://newsdata.io/api/1/latest?apikey=${API_KEY}&q=${encodeURIComponent(query)}&country=mx`;
-
-  try {
-    console.log('Caché expirado o vacío. Consultando NewsData API...');
-    
-    const response = await fetch(url);
-    const data = await response.json();
-    
-    // Manejo de errores de la API (ej. límite de tokens alcanzado)
-    if (data.status === 'error') {
-        console.error('Error reportado por NewsData:', data.results?.message || data.message);
-        
-        // Servir caché de respaldo para evitar romper la vista del cliente
-        if (noticiasCache) {
-            console.log('Sirviendo caché de respaldo tras error de la API.');
-            return res.json(noticiasCache);
-        }
-        return res.json([]);
+  if (promesaActualizacion) {
+    try {
+        const articles = await promesaActualizacion;
+        return res.json(articles);
+    } catch (error) {
+        if (noticiasCache) return res.json(noticiasCache);
+        return res.status(500).json({ error: 'Error interno del servidor' });
     }
-
-    // Mapear los resultados al formato esperado por Angular
-    const articles = (data.results || []).map(item => ({
-      title: item.title,
-      description: item.description || '',
-      url: item.link, 
-      publishedAt: item.pubDate,
-      source: {
-        name: item.source_id || 'NewsData'
-      },
-      image: item.image_url || null
-    }));
+  }
+  
+  try {
+    promesaActualizacion = obtenerNoticiasDeAPI();
+    const articles = await promesaActualizacion;
     
-    // 4. Actualizar el caché y reiniciar el reloj
     if (articles.length > 0) {
       noticiasCache = articles;
-      ultimaActualizacion = ahora;
+      ultimaActualizacion = Date.now();
     }
     
-    // Enviar respuesta al cliente
-    res.json(articles); 
+    promesaActualizacion = null;
+    return res.json(articles); 
 
   } catch (error) {
-    console.error('Error al obtener noticias:', error);
+    promesaActualizacion = null; 
     
-    // Respaldo de emergencia por fallo de red
     if (noticiasCache) {
-      console.log('Sirviendo caché de respaldo por error de red.');
       return res.json(noticiasCache);
     }
 
-    res.status(500).json({ error: 'Error interno del servidor' });
+    return res.status(500).json({ error: 'Error interno del servidor' });
   }
 });
 
-// Ruta base de comprobación
 app.get('/', (req, res) => {
   res.send('API de Noticias funcionando correctamente');
 });
