@@ -5,6 +5,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
+// IMPORTANTE: Habilitar el parseo de JSON para recibir los datos del formulario
+app.use(express.json());
 
 // --- LIMITADOR DE PETICIONES NATIVO (Sin instalar librerías) ---
 const rateLimitMap = new Map();
@@ -32,6 +34,51 @@ app.use('/api/', (req, res, next) => {
 
   next();
 });
+
+// --- RUTA PARA ENVIAR CORREOS CON EMAILJS ---
+app.post('/api/contacto', async (req, res) => {
+  const { nombre, email, mensaje } = req.body;
+
+  // Las variables deben estar configuradas en la pestaña "Environment" de Render
+  const SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+  const TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+  const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+
+  if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
+    return res.status(500).json({ error: 'Faltan credenciales de EmailJS en el servidor.' });
+  }
+
+  const data = {
+    service_id: SERVICE_ID,
+    template_id: TEMPLATE_ID,
+    user_id: PUBLIC_KEY,
+    template_params: {
+      name: nombre,
+      correo: email,
+      mensaje: mensaje
+    }
+  };
+
+  try {
+    const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify(data),
+    });
+
+    if (!response.ok) {
+      throw new Error('Error de EmailJS al procesar la solicitud');
+    }
+
+    return res.status(200).json({ success: true, message: 'Correo enviado.' });
+  } catch (error) {
+    console.error('Error enviando el correo:', error);
+    return res.status(500).json({ error: 'Hubo un error al enviar el correo.' });
+  }
+});
+
 
 // --- CACHÉ Y CANDADO (Protección de créditos y memoria) ---
 let noticiasCache = null;
