@@ -36,7 +36,7 @@ app.use('/api/', (req, res, next) => {
 });
 // --- RUTA PARA ENVIAR CORREOS CON EMAILJS ---
 app.post('/api/contacto', async (req, res) => {
-  const { nombre, email, mensaje } = req.body;
+  const { nombre, email, telefono, mensaje } = req.body;
 
   const SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
   const TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
@@ -51,11 +51,12 @@ app.post('/api/contacto', async (req, res) => {
     service_id: SERVICE_ID,
     template_id: TEMPLATE_ID,
     user_id: PUBLIC_KEY,
-    accessToken: PRIVATE_KEY,
+    accessToken: PRIVATE_KEY, 
     template_params: {
       name: nombre,
       correo: email,
-      mensaje: mensaje
+      telefono: telefono,
+      mensaje: mensaje    
     }
   };
 
