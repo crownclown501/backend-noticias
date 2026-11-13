@@ -56,7 +56,7 @@ app.post('/api/contacto', async (req, res) => {
       name: nombre,
       correo: email,
       telefono: telefono,
-      mensaje: mensaje    
+      mensaje: mensaje  
     }
   };
 
