@@ -34,17 +34,16 @@ app.use('/api/', (req, res, next) => {
 
   next();
 });
-
 // --- RUTA PARA ENVIAR CORREOS CON EMAILJS ---
 app.post('/api/contacto', async (req, res) => {
   const { nombre, email, mensaje } = req.body;
 
-  // Las variables deben estar configuradas en la pestaña "Environment" de Render
   const SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
   const TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
   const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+  const PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY; 
 
-  if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY) {
+  if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY || !PRIVATE_KEY) {
     return res.status(500).json({ error: 'Faltan credenciales de EmailJS en el servidor.' });
   }
 
@@ -52,6 +51,7 @@ app.post('/api/contacto', async (req, res) => {
     service_id: SERVICE_ID,
     template_id: TEMPLATE_ID,
     user_id: PUBLIC_KEY,
+    accessToken: PRIVATE_KEY,
     template_params: {
       name: nombre,
       correo: email,
@@ -69,6 +69,8 @@ app.post('/api/contacto', async (req, res) => {
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error('Error desde EmailJS:', errorText);
       throw new Error('Error de EmailJS al procesar la solicitud');
     }
 
@@ -78,7 +80,6 @@ app.post('/api/contacto', async (req, res) => {
     return res.status(500).json({ error: 'Hubo un error al enviar el correo.' });
   }
 });
-
 
 // --- CACHÉ Y CANDADO (Protección de créditos y memoria) ---
 let noticiasCache = null;
