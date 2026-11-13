@@ -5,10 +5,8 @@ const app = express();
 const PORT = process.env.PORT || 3000;
 
 app.use(cors());
-// IMPORTANTE: Habilitar el parseo de JSON para recibir los datos del formulario
 app.use(express.json());
 
-// --- LIMITADOR DE PETICIONES NATIVO (Sin instalar librerías) ---
 const rateLimitMap = new Map();
 app.use('/api/', (req, res, next) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -56,7 +54,7 @@ app.post('/api/contacto', async (req, res) => {
       name: nombre,
       correo: email,
       telefono: telefono,
-      mensaje: mensaje,
+     // mensaje: mensaje,
       Mensaje: mensaje
     }
   };
