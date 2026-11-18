@@ -109,7 +109,7 @@ let ultimaActualizacion = 0;
 let promesaActualizacion = null;
 const TIEMPO_EXPIRACION = 12 * 60 * 60 * 1000; 
 
-async function obtenerNoticiasDeAPI() {
+/*async function obtenerNoticiasDeAPI() {
   const API_KEY = process.env.NEWSDATA_API_KEY;
   if (!API_KEY) throw new Error('Falta API Key de NewsData');
 
@@ -131,8 +131,43 @@ async function obtenerNoticiasDeAPI() {
     source: { name: item.source_id || 'NewsData' },
     image: item.image_url || null
   }));
-}
+}*/
+async function obtenerNoticiasDeAPI() {
+  const API_KEY = process.env.NEWSDATA_API_KEY;
+  if (!API_KEY) throw new Error('Falta API Key de NewsData');
 
+  // 1. Consulta enfocada en términos técnicos reales del SAT y contabilidad en México
+  const query = '("SAT" OR "Buzón Tributario" OR "contabilidad electrónica" OR "miscelánea fiscal" OR "declaración anual" OR "CFDI") AND (impuestos OR fiscal OR contribuyentes)';
+  
+  // 2. Agregamos language=es, category=business y removeduplicate=1 para evitar notas repetidas o irrelevantes
+  const url = `https://newsdata.io/api/1/latest?apikey=${API_KEY}&qInTitle=${encodeURIComponent('"SAT" OR "impuestos" OR "fiscal" OR "contabilidad" OR "CFDI" OR "Buzón Tributario"')}&country=mx&language=es&category=business&removeduplicate=1`;
+
+  const response = await fetch(url);
+  const data = await response.json();
+
+  if (data.status === 'error') {
+    console.error('Detalle error NewsData:', data.results);
+    throw new Error('Error en NewsData');
+  }
+
+  // Imágenes de respaldo corporativas por si una nota fiscal viene sin foto
+  const imagenesRespaldo = [
+    'https://images.unsplash.com/photo-1554224155-6726b3ff858f?auto=format&fit=crop&w=800&q=80',
+    'https://images.unsplash.com/photo-1454165804606-c3d57bc86b40?auto=format&fit=crop&w=800&q=80',
+    'https://images.unsplash.com/photo-1586486855514-8c633cc6fd38?auto=format&fit=crop&w=800&q=80'
+  ];
+
+  return (data.results || [])
+    .filter(item => item.title && item.description && item.description.length > 40)
+    .map((item, index) => ({
+      title: item.title,
+      description: item.description,
+      url: item.link,
+      publishedAt: item.pubDate,
+      source: { name: item.source_id || 'Actualidad Fiscal' },
+      image: item.image_url || imagenesRespaldo[index % imagenesRespaldo.length]
+    }));
+}
 app.get('/api/noticias-sat', async (req, res) => {
   const ahora = Date.now();
 
