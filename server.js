@@ -7,6 +7,7 @@ const PORT = process.env.PORT || 3000;
 app.use(cors());
 app.use(express.json());
 
+// --- RATE LIMITING (Protección contra saturación de peticiones) ---
 const rateLimitMap = new Map();
 app.use('/api/', (req, res, next) => {
   const ip = req.headers['x-forwarded-for'] || req.socket.remoteAddress;
@@ -27,44 +28,65 @@ app.use('/api/', (req, res, next) => {
 
   data.count++;
   if (data.count > limite) {
-    return res.status(429).json([]); 
+    return res.status(429).json({ error: 'Límite de peticiones excedido.' }); 
   }
 
   next();
 });
-// --- RUTA PARA ENVIAR CORREOS CON EMAILJS ---
+
+// --- RUTA DE CONTACTO CON VALIDACIÓN DE RECAPTCHA Y EMAILJS ---
 app.post('/api/contacto', async (req, res) => {
-  const { nombre, email, telefono, mensaje } = req.body;
+  const { nombre, email, telefono, mensaje, recaptchaToken } = req.body;
 
-  const SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
-  const TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
-  const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
-  const PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY; 
-
-  if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY || !PRIVATE_KEY) {
-    return res.status(500).json({ error: 'Faltan credenciales de EmailJS en el servidor.' });
+  // 1. Validar que el token de reCAPTCHA esté presente
+  if (!recaptchaToken) {
+    return res.status(400).json({ error: 'Token de seguridad requerido.' });
   }
 
-  const data = {
-    service_id: SERVICE_ID,
-    template_id: TEMPLATE_ID,
-    user_id: PUBLIC_KEY,
-    accessToken: PRIVATE_KEY, 
-    template_params: {
-      name: nombre,
-      correo: email,
-      telefono: telefono,
-     // mensaje: mensaje,
-      Mensaje: mensaje
-    }
-  };
-
   try {
+    // 2. Verificar el token directamente con Google usando la clave secreta de Render
+    const RECAPTCHA_SECRET_KEY = process.env.RECAPTCHA_SECRET_KEY;
+    if (!RECAPTCHA_SECRET_KEY) {
+      console.error('Falta configurar RECAPTCHA_SECRET_KEY en las variables de entorno de Render.');
+      return res.status(500).json({ error: 'Error de configuración en el servidor.' });
+    }
+
+    const verifyUrl = `https://www.google.com/recaptcha/api/siteverify?secret=${RECAPTCHA_SECRET_KEY}&response=${recaptchaToken}`;
+    const recaptchaRes = await fetch(verifyUrl, { method: 'POST' });
+    const recaptchaResult = await recaptchaRes.json();
+
+    // 3. Evaluar si la petición es legítima (Score mayor a 0.5)
+    if (!recaptchaResult.success || recaptchaResult.score < 0.5) {
+      console.warn('Acción bloqueada por reCAPTCHA. Score:', recaptchaResult.score);
+      return res.status(403).json({ error: 'Acción bloqueada por medidas de seguridad antispam.' });
+    }
+
+    // 4. Credenciales de EmailJS
+    const SERVICE_ID = process.env.EMAILJS_SERVICE_ID;
+    const TEMPLATE_ID = process.env.EMAILJS_TEMPLATE_ID;
+    const PUBLIC_KEY = process.env.EMAILJS_PUBLIC_KEY;
+    const PRIVATE_KEY = process.env.EMAILJS_PRIVATE_KEY; 
+
+    if (!SERVICE_ID || !TEMPLATE_ID || !PUBLIC_KEY || !PRIVATE_KEY) {
+      return res.status(500).json({ error: 'Faltan credenciales de EmailJS en el servidor.' });
+    }
+
+    const data = {
+      service_id: SERVICE_ID,
+      template_id: TEMPLATE_ID,
+      user_id: PUBLIC_KEY,
+      accessToken: PRIVATE_KEY, 
+      template_params: {
+        name: nombre,
+        correo: email,
+        telefono: telefono,
+        Mensaje: mensaje
+      }
+    };
+
     const response = await fetch('https://api.emailjs.com/api/v1.0/email/send', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-      },
+      headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
     });
 
@@ -74,23 +96,22 @@ app.post('/api/contacto', async (req, res) => {
       throw new Error('Error de EmailJS al procesar la solicitud');
     }
 
-    return res.status(200).json({ success: true, message: 'Correo enviado.' });
+    return res.status(200).json({ success: true, message: 'Correo enviado con éxito.' });
   } catch (error) {
-    console.error('Error enviando el correo:', error);
+    console.error('Error procesando el contacto:', error);
     return res.status(500).json({ error: 'Hubo un error al enviar el correo.' });
   }
 });
 
-// --- CACHÉ Y CANDADO (Protección de créditos y memoria) ---
+// --- CACHÉ Y OBTENCIÓN DE NOTICIAS (NEWSDATA.IO) ---
 let noticiasCache = null;
 let ultimaActualizacion = 0;
 let promesaActualizacion = null;
-
 const TIEMPO_EXPIRACION = 12 * 60 * 60 * 1000; 
 
 async function obtenerNoticiasDeAPI() {
   const API_KEY = process.env.NEWSDATA_API_KEY;
-  if (!API_KEY) throw new Error('');
+  if (!API_KEY) throw new Error('Falta API Key de NewsData');
 
   const query = '"Servicio de Administración Tributaria" OR "reforma fiscal" OR "contabilidad financiera"';
   const url = `https://newsdata.io/api/1/latest?apikey=${API_KEY}&q=${encodeURIComponent(query)}&country=mx`;
@@ -143,17 +164,13 @@ app.get('/api/noticias-sat', async (req, res) => {
 
   } catch (error) {
     promesaActualizacion = null; 
-    
-    if (noticiasCache) {
-      return res.json(noticiasCache);
-    }
-
+    if (noticiasCache) return res.json(noticiasCache);
     return res.json([]); 
   }
 });
 
 app.get('/', (req, res) => {
-  res.send(''); 
+  res.send('Backend de Huerta Díaz Activo y Seguro'); 
 });
 
 app.listen(PORT, () => {
